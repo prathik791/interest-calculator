@@ -20,8 +20,12 @@ if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
 // Middleware
 app.use(cors({
-  origin: ['http://localhost:3000', 'http://localhost:3001','http://localhost:5173'],
-  credentials: true,
+  origin: [
+    'http://localhost:3000',
+    'http://localhost:5173',
+    'https://interest-calculator-vekw.vercel.app'
+  ],
+  credentials: true
 }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
