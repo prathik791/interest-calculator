@@ -55,7 +55,7 @@ startReminderJobs();
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-  console.log(`\n🚀 Interest Calculator API running on http://localhost:${PORT}`);
+ console.log(`🚀 Interest Calculator API running on PORT ${PORT}`);
   console.log(`📡 Environment: ${process.env.NODE_ENV}`);
   console.log(`🗄️  MongoDB: ${process.env.MONGODB_URI}\n`);
 });
