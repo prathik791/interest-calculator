@@ -24,10 +24,7 @@ if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
 
 app.use(cors({
-  origin: [
-    "http://localhost:3000",
-    "https://interest-calculator-vekw-igexnrmz6-prathik791s-projects.vercel.app"
-  ],
+  origin: "*",
   methods: ["GET", "POST", "PUT", "DELETE"],
   credentials: true
 }));
