@@ -1,274 +1,268 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { Bar, Doughnut, Line } from 'react-chartjs-2';
+import {
+  Chart as ChartJS, CategoryScale, LinearScale, BarElement,
+  LineElement, PointElement, ArcElement, Title, Tooltip, Legend, Filler,
+} from 'chart.js';
 import API from '../utils/api';
-import { formatCurrency, formatDate, calculateInterest } from '../utils/calculations';
-import toast from 'react-hot-toast';
+import { formatCurrency, formatDate } from '../utils/calculations';
+import { useAuth } from '../context/AuthContext';
 
-export default function TransactionsPage() {
-  const [transactions, setTransactions] = useState([]);
+ChartJS.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, ArcElement, Title, Tooltip, Legend, Filler);
+
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+export default function DashboardPage() {
+  const { user } = useAuth();
+  const [summary, setSummary] = useState(null);
+  const [recentTx, setRecentTx] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [filters, setFilters] = useState({ type: '', status: '', personName: '' });
-  const [pagination, setPagination] = useState({ page: 1, pages: 1, total: 0 });
-  const [deleteId, setDeleteId] = useState(null);
-  const [expandedId, setExpandedId] = useState(null);
 
-  const fetchTransactions = useCallback(async () => {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams({ page: pagination.page, limit: 15, ...filters });
-      Object.keys(filters).forEach((k) => { if (!filters[k]) params.delete(k); });
-      const { data } = await API.get(`/transactions/list?${params}`);
-      setTransactions(data.data);
-      setPagination((p) => ({ ...p, ...data.pagination }));
-    } catch (err) {
-      toast.error('Failed to load transactions');
-    } finally {
-      setLoading(false);
-    }
-  }, [filters, pagination.page]);
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [summaryRes, txRes] = await Promise.all([
+          API.get('/transactions/summary'),
+          API.get('/transactions/list?limit=5'),
+        ]);
+        setSummary(summaryRes.data.data);
+        setRecentTx(txRes.data.data);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, []);
 
-  useEffect(() => { fetchTransactions(); }, [filters, pagination.page]);
+  if (loading) return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh' }}>
+      <div className="spinner" />
+    </div>
+  );
 
-  const handleDelete = async (id) => {
-    try {
-      await API.delete(`/transactions/delete/${id}`);
-      toast.success('Transaction deleted');
-      setDeleteId(null);
-      fetchTransactions();
-    } catch (err) {
-      toast.error('Failed to delete');
-    }
+  const cards = [
+    { label: 'Total Given', value: formatCurrency(summary?.totalGiven || 0), color: 'var(--green)', bg: 'var(--green-glow)', icon: '↑' },
+    { label: 'Total Taken', value: formatCurrency(summary?.totalTaken || 0), color: 'var(--red)', bg: 'var(--red-glow)', icon: '↓' },
+    { label: 'Interest Earned', value: formatCurrency(summary?.totalInterestEarned || 0), color: 'var(--gold)', bg: 'var(--gold-glow)', icon: '⊛' },
+    { label: 'Net Balance', value: formatCurrency(summary?.netBalance || 0), color: 'var(--accent)', bg: 'var(--accent-glow)', icon: '◈' },
+  ];
+
+  // Build monthly chart data
+  const monthlyMap = {};
+  (summary?.monthlyData || []).forEach((d) => {
+    const key = `${MONTH_NAMES[d._id.month - 1]} ${d._id.year}`;
+    if (!monthlyMap[key]) monthlyMap[key] = { given: 0, taken: 0 };
+    monthlyMap[key][d._id.type] = d.total;
+  });
+  const labels = Object.keys(monthlyMap);
+  const givenData = labels.map((k) => monthlyMap[k].given || 0);
+  const takenData = labels.map((k) => monthlyMap[k].taken || 0);
+
+  const barData = {
+    labels,
+    datasets: [
+      { label: 'Given', data: givenData, backgroundColor: 'rgba(16,217,160,0.7)', borderRadius: 6 },
+      { label: 'Taken', data: takenData, backgroundColor: 'rgba(255,71,87,0.7)', borderRadius: 6 },
+    ],
   };
 
-  const filterChange = (key, val) => {
-    setFilters((f) => ({ ...f, [key]: val }));
-    setPagination((p) => ({ ...p, page: 1 }));
+  const donutData = {
+    labels: ['Given', 'Taken'],
+    datasets: [{
+      data: [summary?.totalGiven || 0, summary?.totalTaken || 0],
+      backgroundColor: ['rgba(16,217,160,0.8)', 'rgba(255,71,87,0.8)'],
+      borderColor: ['#10d9a0', '#ff4757'],
+      borderWidth: 2,
+    }],
   };
+
+  const chartOptions = {
+    responsive: true,
+    plugins: {
+      legend: { labels: { color: '#8888aa', font: { family: 'Syne' } } },
+      tooltip: {
+        backgroundColor: '#12121f', borderColor: '#1e1e35', borderWidth: 1,
+        titleColor: '#e8e8f0', bodyColor: '#8888aa',
+        callbacks: { label: (ctx) => ` ₹${ctx.parsed.y?.toLocaleString('en-IN') || ctx.parsed?.toLocaleString('en-IN')}` },
+      },
+    },
+    scales: {
+      x: { grid: { color: 'rgba(30,30,53,0.8)' }, ticks: { color: '#8888aa', font: { family: 'Syne' } } },
+      y: { grid: { color: 'rgba(30,30,53,0.8)' }, ticks: { color: '#8888aa', font: { family: 'Syne' }, callback: (v) => `₹${v.toLocaleString('en-IN')}` } },
+    },
+  };
+
+  const donutOptions = {
+    responsive: true,
+    plugins: {
+      legend: { position: 'bottom', labels: { color: '#8888aa', padding: 20, font: { family: 'Syne' } } },
+    },
+    cutout: '65%',
+  };
+
+  // Person summary
+  const personMap = {};
+  (summary?.personSummary || []).forEach((p) => {
+    const name = p._id.personName;
+    if (!personMap[name]) personMap[name] = { given: 0, taken: 0 };
+    personMap[name][p._id.type] = (personMap[name][p._id.type] || 0) + p.totalAmount;
+  });
+  const topPersons = Object.entries(personMap).slice(0, 5);
 
   return (
     <div>
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '28px', flexWrap: 'wrap', gap: '16px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '32px', flexWrap: 'wrap', gap: '16px' }}>
         <div>
-          <h1 style={{ fontSize: '28px', fontWeight: '800' }}>Transactions</h1>
+          <h1 style={{ fontSize: '28px', fontWeight: '800', letterSpacing: '-0.5px' }}>
+            Good day, {user?.name?.split(' ')[0]} 👋
+          </h1>
           <p style={{ color: 'var(--text-muted)', fontSize: '14px', marginTop: '4px' }}>
-            {pagination.total} total records
+            {summary?.transactionCount || 0} total transactions tracked
           </p>
         </div>
         <Link to="/add-transaction" className="btn btn-primary">⊕ Add Transaction</Link>
       </div>
 
-      {/* Filters */}
-      <div className="card" style={{ padding: '20px', marginBottom: '20px', display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
-        <input
-          type="text" className="form-input" placeholder="🔍 Search by person..."
-          value={filters.personName}
-          onChange={(e) => filterChange('personName', e.target.value)}
-          style={{ flex: '1', minWidth: '200px', maxWidth: '280px' }}
-        />
-        <select className="form-select" value={filters.type} onChange={(e) => filterChange('type', e.target.value)}
-          style={{ minWidth: '150px' }}>
-          <option value="">All Types</option>
-          <option value="given">Money Given</option>
-          <option value="taken">Money Taken</option>
-        </select>
-        <select className="form-select" value={filters.status} onChange={(e) => filterChange('status', e.target.value)}
-          style={{ minWidth: '150px' }}>
-          <option value="">All Status</option>
-          <option value="active">Active</option>
-          <option value="partial">Partial</option>
-          <option value="closed">Closed</option>
-        </select>
-        {(filters.type || filters.status || filters.personName) && (
-          <button className="btn btn-ghost btn-sm" onClick={() => { setFilters({ type: '', status: '', personName: '' }); }}>
-            ✕ Clear
-          </button>
-        )}
-      </div>
-
-      {/* Table */}
-      <div className="card" style={{ padding: 0 }}>
-        {loading ? (
-          <div style={{ display: 'flex', justifyContent: 'center', padding: '60px' }}>
-            <div className="spinner" />
-          </div>
-        ) : transactions.length === 0 ? (
-          <div className="empty-state">
-            <div className="icon">◈</div>
-            <h3>No transactions found</h3>
-            <p>Try adjusting filters or add your first transaction</p>
-            <Link to="/add-transaction" className="btn btn-primary btn-sm" style={{ marginTop: '8px' }}>Add Transaction</Link>
-          </div>
-        ) : (
-          <>
-            <div className="table-wrapper" style={{ border: 'none', borderRadius: 0 }}>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Person</th>
-                    <th>Type</th>
-                    <th>Amount</th>
-                    <th>Rate</th>
-                    <th>Interest (Simple)</th>
-                    <th>Date</th>
-                    <th>Mode</th>
-                    <th>Status</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {transactions.map((t) => {
-                    const calc = calculateInterest(t.amount, t.interestRate, t.date);
-                    const isExpanded = expandedId === t._id;
-                    return (
-                      <React.Fragment key={t._id}>
-                        <tr style={{ cursor: 'pointer' }} onClick={() => setExpandedId(isExpanded ? null : t._id)}>
-                          <td>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                              <div style={{
-                                width: '32px', height: '32px', borderRadius: '50%', flexShrink: 0,
-                                background: t.type === 'given' ? 'var(--green-glow)' : 'var(--red-glow)',
-                                color: t.type === 'given' ? 'var(--green)' : 'var(--red)',
-                                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                fontWeight: '700', fontSize: '13px',
-                              }}>
-                                {t.personName.charAt(0).toUpperCase()}
-                              </div>
-                              <div>
-                                <div style={{ fontWeight: '600', color: 'var(--text-primary)' }}>{t.personName}</div>
-                                {t.contact && <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{t.contact}</div>}
-                              </div>
-                            </div>
-                          </td>
-                          <td>
-                            <span className={`badge badge-${t.type}`}>
-                              {t.type === 'given' ? '↑ Given' : '↓ Taken'}
-                            </span>
-                          </td>
-                          <td>
-                            <span style={{ fontFamily: 'DM Mono, monospace', fontWeight: '700', color: t.type === 'given' ? 'var(--green)' : 'var(--red)' }}>
-                              {formatCurrency(t.amount)}
-                            </span>
-                          </td>
-                          <td style={{ fontFamily: 'DM Mono, monospace' }}>{t.interestRate}%</td>
-                          <td>
-                            <span style={{ fontFamily: 'DM Mono, monospace', color: 'var(--gold)', fontWeight: '600' }}>
-                              {formatCurrency(calc.simple)}
-                            </span>
-                          </td>
-                          <td style={{ whiteSpace: 'nowrap' }}>{formatDate(t.date)}</td>
-                          <td style={{ textTransform: 'capitalize', fontSize: '13px' }}>
-                            {t.paymentMode?.replace('_', ' ')}
-                          </td>
-                          <td>
-                            <span className={`badge badge-${t.status}`}>{t.status}</span>
-                          </td>
-                          <td>
-                            <div style={{ display: 'flex', gap: '6px' }} onClick={(e) => e.stopPropagation()}>
-                              <Link to={`/edit-transaction/${t._id}`} className="btn btn-ghost btn-sm" style={{ padding: '6px 10px' }}>
-                                ✎
-                              </Link>
-                              <button
-                                className="btn btn-sm"
-                                onClick={() => setDeleteId(t._id)}
-                                style={{ padding: '6px 10px', background: 'var(--red-glow)', color: 'var(--red)', border: '1px solid rgba(255,71,87,0.2)' }}
-                              >
-                                ✕
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                        {isExpanded && (
-                          <tr>
-                            <td colSpan="9" style={{ background: 'var(--bg-secondary)', padding: 0 }}>
-                              <div style={{ padding: '20px 24px', display: 'flex', gap: '32px', flexWrap: 'wrap' }}>
-                                <div>
-                                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '6px' }}>Interest Breakdown</div>
-                                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-                                    {[
-                                      { l: 'Simple', v: calc.simple, c: 'var(--accent)' },
-                                      { l: 'Compound', v: calc.compound, c: 'var(--gold)' },
-                                      { l: 'Monthly', v: calc.monthly, c: 'var(--green)' },
-                                      { l: 'Yearly', v: calc.yearly, c: 'var(--text-secondary)' },
-                                    ].map((item, i) => (
-                                      <div key={i}>
-                                        <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{item.l}</div>
-                                        <div style={{ fontFamily: 'DM Mono, monospace', fontWeight: '700', color: item.c }}>{formatCurrency(item.v)}</div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                                <div>
-                                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '6px' }}>Duration</div>
-                                  <div style={{ fontFamily: 'DM Mono, monospace', fontWeight: '600', color: 'var(--text-primary)' }}>
-                                    {calc.days} days · {calc.months} months
-                                  </div>
-                                </div>
-                                {t.notes && (
-                                  <div>
-                                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '6px' }}>Notes</div>
-                                    <div style={{ fontSize: '13px', color: 'var(--text-secondary)', maxWidth: '300px' }}>{t.notes}</div>
-                                  </div>
-                                )}
-                                {t.dueDate && (
-                                  <div>
-                                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '6px' }}>Due Date</div>
-                                    <div style={{ fontFamily: 'DM Mono, monospace', color: 'var(--gold)', fontWeight: '600' }}>{formatDate(t.dueDate)}</div>
-                                  </div>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        )}
-                      </React.Fragment>
-                    );
-                  })}
-                </tbody>
-              </table>
+      {/* Summary cards */}
+      <div className="grid-4" style={{ marginBottom: '28px' }}>
+        {cards.map((c, i) => (
+          <div key={i} className="card" style={{
+            background: `linear-gradient(135deg, var(--bg-card) 0%, ${c.bg.replace(')', ', 0.3)')} 100%)`,
+            border: `1px solid ${c.color}22`,
+            animation: `fadeIn 0.4s ease ${i * 0.08}s both`,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+              <span style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px' }}>{c.label}</span>
+              <span style={{
+                width: '34px', height: '34px', borderRadius: '8px',
+                background: c.bg, color: c.color,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: '16px', fontWeight: '800',
+              }}>{c.icon}</span>
             </div>
-
-            {/* Pagination */}
-            {pagination.pages > 1 && (
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '20px', borderTop: '1px solid var(--border)' }}>
-                <button className="btn btn-ghost btn-sm"
-                  disabled={pagination.page <= 1}
-                  onClick={() => setPagination((p) => ({ ...p, page: p.page - 1 }))}>
-                  ← Prev
-                </button>
-                <span style={{ color: 'var(--text-muted)', fontSize: '13px' }}>
-                  Page {pagination.page} of {pagination.pages}
-                </span>
-                <button className="btn btn-ghost btn-sm"
-                  disabled={pagination.page >= pagination.pages}
-                  onClick={() => setPagination((p) => ({ ...p, page: p.page + 1 }))}>
-                  Next →
-                </button>
-              </div>
-            )}
-          </>
-        )}
-      </div>
-
-      {/* Delete Confirm Modal */}
-      {deleteId && (
-        <div style={{
-          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000,
-          backdropFilter: 'blur(4px)',
-        }}>
-          <div className="card" style={{ padding: '40px', maxWidth: '400px', width: '90%', textAlign: 'center' }}>
-            <div style={{ fontSize: '48px', marginBottom: '16px' }}>⚠️</div>
-            <h3 style={{ fontSize: '20px', fontWeight: '700', marginBottom: '12px' }}>Delete Transaction?</h3>
-            <p style={{ color: 'var(--text-muted)', marginBottom: '28px', fontSize: '14px' }}>
-              This action cannot be undone. The transaction and all associated data will be permanently removed.
-            </p>
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-              <button className="btn btn-ghost" onClick={() => setDeleteId(null)}>Cancel</button>
-              <button className="btn btn-danger" onClick={() => handleDelete(deleteId)}>Delete</button>
+            <div style={{ fontSize: '26px', fontWeight: '800', color: c.color, fontFamily: 'DM Mono, monospace', letterSpacing: '-1px' }}>
+              {c.value}
             </div>
           </div>
+        ))}
+      </div>
+
+      {/* Charts */}
+      <div className="grid-2" style={{ marginBottom: '28px' }}>
+        <div className="card" style={{ animation: 'fadeIn 0.4s ease 0.3s both' }}>
+          <h3 style={{ fontSize: '15px', fontWeight: '700', marginBottom: '20px', color: 'var(--text-secondary)' }}>
+            Monthly Overview
+          </h3>
+          {labels.length > 0
+            ? <Bar data={barData} options={chartOptions} />
+            : <div className="empty-state"><div className="icon">◫</div><p>Add transactions to see chart</p></div>
+          }
         </div>
-      )}
+
+        <div className="card" style={{ animation: 'fadeIn 0.4s ease 0.35s both' }}>
+          <h3 style={{ fontSize: '15px', fontWeight: '700', marginBottom: '20px', color: 'var(--text-secondary)' }}>
+            Given vs Taken
+          </h3>
+          {(summary?.totalGiven || summary?.totalTaken)
+            ? <div style={{ maxWidth: '260px', margin: '0 auto' }}><Doughnut data={donutData} options={donutOptions} /></div>
+            : <div className="empty-state"><div className="icon">◈</div><p>No transactions yet</p></div>
+          }
+        </div>
+      </div>
+
+      {/* Bottom row: Recent transactions + Top persons */}
+      <div className="grid-2">
+        <div className="card" style={{ animation: 'fadeIn 0.4s ease 0.4s both' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+            <h3 style={{ fontSize: '15px', fontWeight: '700', color: 'var(--text-secondary)' }}>Recent Transactions</h3>
+            <Link to="/transactions" style={{ fontSize: '13px', color: 'var(--accent)', textDecoration: 'none', fontWeight: '600' }}>View all →</Link>
+          </div>
+          {recentTx.length > 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {recentTx.map((t) => (
+                <div key={t._id} style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '12px 14px', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-sm)',
+                  border: '1px solid var(--border)',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div style={{
+                      width: '36px', height: '36px', borderRadius: '50%',
+                      background: t.type === 'given' ? 'var(--green-glow)' : 'var(--red-glow)',
+                      color: t.type === 'given' ? 'var(--green)' : 'var(--red)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontWeight: '700', fontSize: '14px',
+                    }}>
+                      {t.personName.charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                      <div style={{ fontWeight: '600', fontSize: '14px' }}>{t.personName}</div>
+                      <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{formatDate(t.date)}</div>
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{
+                      fontWeight: '700', fontSize: '14px', fontFamily: 'DM Mono, monospace',
+                      color: t.type === 'given' ? 'var(--green)' : 'var(--red)',
+                    }}>
+                      {t.type === 'given' ? '+' : '-'}{formatCurrency(t.amount)}
+                    </div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{t.interestRate}% p.a.</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="empty-state">
+              <div className="icon">◈</div>
+              <h3>No transactions yet</h3>
+              <Link to="/add-transaction" className="btn btn-primary btn-sm" style={{ marginTop: '8px' }}>Add First Transaction</Link>
+            </div>
+          )}
+        </div>
+
+        <div className="card" style={{ animation: 'fadeIn 0.4s ease 0.45s both' }}>
+          <h3 style={{ fontSize: '15px', fontWeight: '700', color: 'var(--text-secondary)', marginBottom: '20px' }}>
+            Account Balances by Person
+          </h3>
+          {topPersons.length > 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {topPersons.map(([name, data], i) => {
+                const net = (data.given || 0) - (data.taken || 0);
+                return (
+                  <div key={i} style={{
+                    padding: '14px', background: 'var(--bg-secondary)',
+                    borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)',
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <span style={{ fontWeight: '600', fontSize: '14px' }}>{name}</span>
+                      <span style={{
+                        fontWeight: '700', fontFamily: 'DM Mono, monospace', fontSize: '14px',
+                        color: net >= 0 ? 'var(--green)' : 'var(--red)',
+                      }}>
+                        {net >= 0 ? '+' : ''}{formatCurrency(net)}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', gap: '16px', fontSize: '12px', color: 'var(--text-muted)' }}>
+                      <span style={{ color: 'var(--green)' }}>↑ {formatCurrency(data.given || 0)}</span>
+                      <span style={{ color: 'var(--red)' }}>↓ {formatCurrency(data.taken || 0)}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="empty-state">
+              <div className="icon">◫</div>
+              <h3>No accounts yet</h3>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const API = axios.create({
-  baseURL: "https://interest-calculator-backend-i2dr.onrender.com"
+  baseURL: "https://interest-calculator-backend-i2dr.onrender.com/api"
 });
 
 API.interceptors.request.use((config) => {
