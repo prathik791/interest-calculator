@@ -22,7 +22,7 @@ if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
 
 
-const cors = require("cors");
+
 
 app.use(cors({
   origin: "*",
