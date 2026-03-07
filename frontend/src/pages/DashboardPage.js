@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Bar, Doughnut, Line } from 'react-chartjs-2';
+import { Bar, Doughnut } from 'react-chartjs-2';
 import {
   Chart as ChartJS, CategoryScale, LinearScale, BarElement,
   LineElement, PointElement, ArcElement, Title, Tooltip, Legend, Filler,
@@ -43,10 +43,43 @@ export default function DashboardPage() {
     </div>
   );
 
+  // Helper to calculate simple interest given principal, rate (%), and start date
+  function calculateInterest(amount, rate, dateStr) {
+    if (!amount || !rate || !dateStr) return 0;
+    const principal = Number(amount);
+    const interestRate = Number(rate);
+    const startDate = new Date(dateStr);
+    const now = new Date();
+
+    // Prevent negative durations if startDate is in the future
+    const diffTime = Math.max(0, now.getTime() - startDate.getTime());
+    const diffYears = diffTime / (1000 * 3600 * 24 * 365);
+
+    // Simple Interest = P * R * T / 100
+    const simpleInterest = principal * interestRate * diffYears / 100;
+    return simpleInterest;
+  }
+
+  // Calculate total interest earned from personSummary data on the frontend
+  const totalInterestEarnedFromFrontend = summary?.personSummary
+    ? summary.personSummary.reduce((acc, p) => {
+        // p._id should contain interestRate and date for calculation
+        if (!p.totalAmount || !p._id.interestRate || !p._id.date) return acc;
+
+        const interest = calculateInterest(
+          p.totalAmount,
+          p._id.interestRate,
+          p._id.date
+        );
+        // Count interest only for 'given' transactions (adjust logic if needed)
+        return p._id.type === 'given' ? acc + interest : acc;
+      }, 0)
+    : 0;
+
   const cards = [
     { label: 'Total Given', value: formatCurrency(summary?.totalGiven || 0), color: 'var(--green)', bg: 'var(--green-glow)', icon: '↑' },
     { label: 'Total Taken', value: formatCurrency(summary?.totalTaken || 0), color: 'var(--red)', bg: 'var(--red-glow)', icon: '↓' },
-    { label: 'Interest Earned', value: formatCurrency(summary?.totalInterestEarned || 0), color: 'var(--gold)', bg: 'var(--gold-glow)', icon: '⊛' },
+    { label: 'Interest Earned', value: formatCurrency(totalInterestEarnedFromFrontend || 0), color: 'var(--gold)', bg: 'var(--gold-glow)', icon: '⊛' },
     { label: 'Net Balance', value: formatCurrency(summary?.netBalance || 0), color: 'var(--accent)', bg: 'var(--accent-glow)', icon: '◈' },
   ];
 
@@ -103,7 +136,7 @@ export default function DashboardPage() {
     cutout: '65%',
   };
 
-  // Person summary
+  // Person summary map for top persons
   const personMap = {};
   (summary?.personSummary || []).forEach((p) => {
     const name = p._id.personName;
