@@ -11,13 +11,13 @@ import { useAuth } from '../context/AuthContext';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, ArcElement, Title, Tooltip, Legend, Filler);
 
-const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
 export default function DashboardPage() {
   const { user } = useAuth();
-  const [summary, setSummary] = useState(null);
+  const [summary, setSummary]   = useState(null);
   const [recentTx, setRecentTx] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading]   = useState(true);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -38,59 +38,27 @@ export default function DashboardPage() {
   }, []);
 
   if (loading) return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh' }}>
+    <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'60vh' }}>
       <div className="spinner" />
     </div>
   );
 
-  // Helper to calculate simple interest given principal, rate (%), and start date
-  function calculateInterest(amount, rate, dateStr) {
-    if (!amount || !rate || !dateStr) return 0;
-    const principal = Number(amount);
-    const interestRate = Number(rate);
-    const startDate = new Date(dateStr);
-    const now = new Date();
-
-    // Prevent negative durations if startDate is in the future
-    const diffTime = Math.max(0, now.getTime() - startDate.getTime());
-    const diffYears = diffTime / (1000 * 3600 * 24 * 365);
-
-    // Simple Interest = P * R * T / 100
-    const simpleInterest = principal * interestRate * diffYears / 100;
-    return simpleInterest;
-  }
-
-  // Calculate total interest earned from personSummary data on the frontend
-  const totalInterestEarnedFromFrontend = summary?.personSummary
-    ? summary.personSummary.reduce((acc, p) => {
-        // p._id should contain interestRate and date for calculation
-        if (!p.totalAmount || !p._id.interestRate || !p._id.date) return acc;
-
-        const interest = calculateInterest(
-          p.totalAmount,
-          p._id.interestRate,
-          p._id.date
-        );
-        // Count interest only for 'given' transactions (adjust logic if needed)
-        return p._id.type === 'given' ? acc + interest : acc;
-      }, 0)
-    : 0;
-
+  // ✅ FIX: use totalInterestEarned directly from backend — no frontend recalculation
   const cards = [
-    { label: 'Total Given', value: formatCurrency(summary?.totalGiven || 0), color: 'var(--green)', bg: 'var(--green-glow)', icon: '↑' },
-    { label: 'Total Taken', value: formatCurrency(summary?.totalTaken || 0), color: 'var(--red)', bg: 'var(--red-glow)', icon: '↓' },
-    { label: 'Interest Earned', value: formatCurrency(totalInterestEarnedFromFrontend || 0), color: 'var(--gold)', bg: 'var(--gold-glow)', icon: '⊛' },
-    { label: 'Net Balance', value: formatCurrency(summary?.netBalance || 0), color: 'var(--accent)', bg: 'var(--accent-glow)', icon: '◈' },
+    { label: 'Total Given',     value: formatCurrency(summary?.totalGiven          || 0), color: 'var(--green)',  bg: 'var(--green-glow)',  icon: '↑' },
+    { label: 'Total Taken',     value: formatCurrency(summary?.totalTaken          || 0), color: 'var(--red)',    bg: 'var(--red-glow)',    icon: '↓' },
+    { label: 'Interest Earned', value: formatCurrency(summary?.totalInterestEarned || 0), color: 'var(--gold)',   bg: 'var(--gold-glow)',   icon: '⊛' },
+    { label: 'Net Balance',     value: formatCurrency(summary?.netBalance          || 0), color: 'var(--accent)', bg: 'var(--accent-glow)', icon: '◈' },
   ];
 
-  // Build monthly chart data
+  // Monthly chart
   const monthlyMap = {};
   (summary?.monthlyData || []).forEach((d) => {
     const key = `${MONTH_NAMES[d._id.month - 1]} ${d._id.year}`;
     if (!monthlyMap[key]) monthlyMap[key] = { given: 0, taken: 0 };
     monthlyMap[key][d._id.type] = d.total;
   });
-  const labels = Object.keys(monthlyMap);
+  const labels    = Object.keys(monthlyMap);
   const givenData = labels.map((k) => monthlyMap[k].given || 0);
   const takenData = labels.map((k) => monthlyMap[k].taken || 0);
 
@@ -98,7 +66,7 @@ export default function DashboardPage() {
     labels,
     datasets: [
       { label: 'Given', data: givenData, backgroundColor: 'rgba(16,217,160,0.7)', borderRadius: 6 },
-      { label: 'Taken', data: takenData, backgroundColor: 'rgba(255,71,87,0.7)', borderRadius: 6 },
+      { label: 'Taken', data: takenData, backgroundColor: 'rgba(255,71,87,0.7)',  borderRadius: 6 },
     ],
   };
 
@@ -136,7 +104,7 @@ export default function DashboardPage() {
     cutout: '65%',
   };
 
-  // Person summary map for top persons
+  // Person summary
   const personMap = {};
   (summary?.personSummary || []).forEach((p) => {
     const name = p._id.personName;
@@ -148,12 +116,12 @@ export default function DashboardPage() {
   return (
     <div>
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '32px', flexWrap: 'wrap', gap: '16px' }}>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'32px', flexWrap:'wrap', gap:'16px' }}>
         <div>
-          <h1 style={{ fontSize: '28px', fontWeight: '800', letterSpacing: '-0.5px' }}>
+          <h1 style={{ fontSize:'28px', fontWeight:'800', letterSpacing:'-0.5px' }}>
             Good day, {user?.name?.split(' ')[0]} 👋
           </h1>
-          <p style={{ color: 'var(--text-muted)', fontSize: '14px', marginTop: '4px' }}>
+          <p style={{ color:'var(--text-muted)', fontSize:'14px', marginTop:'4px' }}>
             {summary?.transactionCount || 0} total transactions tracked
           </p>
         </div>
@@ -161,23 +129,18 @@ export default function DashboardPage() {
       </div>
 
       {/* Summary cards */}
-      <div className="grid-4" style={{ marginBottom: '28px' }}>
+      <div className="grid-4" style={{ marginBottom:'28px' }}>
         {cards.map((c, i) => (
           <div key={i} className="card" style={{
             background: `linear-gradient(135deg, var(--bg-card) 0%, ${c.bg.replace(')', ', 0.3)')} 100%)`,
             border: `1px solid ${c.color}22`,
             animation: `fadeIn 0.4s ease ${i * 0.08}s both`,
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-              <span style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px' }}>{c.label}</span>
-              <span style={{
-                width: '34px', height: '34px', borderRadius: '8px',
-                background: c.bg, color: c.color,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: '16px', fontWeight: '800',
-              }}>{c.icon}</span>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'16px' }}>
+              <span style={{ fontSize:'12px', fontWeight:'600', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1px' }}>{c.label}</span>
+              <span style={{ width:'34px', height:'34px', borderRadius:'8px', background:c.bg, color:c.color, display:'flex', alignItems:'center', justifyContent:'center', fontSize:'16px', fontWeight:'800' }}>{c.icon}</span>
             </div>
-            <div style={{ fontSize: '26px', fontWeight: '800', color: c.color, fontFamily: 'DM Mono, monospace', letterSpacing: '-1px' }}>
+            <div style={{ fontSize:'26px', fontWeight:'800', color:c.color, fontFamily:'DM Mono, monospace', letterSpacing:'-1px' }}>
               {c.value}
             </div>
           </div>
@@ -185,66 +148,48 @@ export default function DashboardPage() {
       </div>
 
       {/* Charts */}
-      <div className="grid-2" style={{ marginBottom: '28px' }}>
-        <div className="card" style={{ animation: 'fadeIn 0.4s ease 0.3s both' }}>
-          <h3 style={{ fontSize: '15px', fontWeight: '700', marginBottom: '20px', color: 'var(--text-secondary)' }}>
-            Monthly Overview
-          </h3>
+      <div className="grid-2" style={{ marginBottom:'28px' }}>
+        <div className="card" style={{ animation:'fadeIn 0.4s ease 0.3s both' }}>
+          <h3 style={{ fontSize:'15px', fontWeight:'700', marginBottom:'20px', color:'var(--text-secondary)' }}>Monthly Overview</h3>
           {labels.length > 0
             ? <Bar data={barData} options={chartOptions} />
             : <div className="empty-state"><div className="icon">◫</div><p>Add transactions to see chart</p></div>
           }
         </div>
-
-        <div className="card" style={{ animation: 'fadeIn 0.4s ease 0.35s both' }}>
-          <h3 style={{ fontSize: '15px', fontWeight: '700', marginBottom: '20px', color: 'var(--text-secondary)' }}>
-            Given vs Taken
-          </h3>
+        <div className="card" style={{ animation:'fadeIn 0.4s ease 0.35s both' }}>
+          <h3 style={{ fontSize:'15px', fontWeight:'700', marginBottom:'20px', color:'var(--text-secondary)' }}>Given vs Taken</h3>
           {(summary?.totalGiven || summary?.totalTaken)
-            ? <div style={{ maxWidth: '260px', margin: '0 auto' }}><Doughnut data={donutData} options={donutOptions} /></div>
+            ? <div style={{ maxWidth:'260px', margin:'0 auto' }}><Doughnut data={donutData} options={donutOptions} /></div>
             : <div className="empty-state"><div className="icon">◈</div><p>No transactions yet</p></div>
           }
         </div>
       </div>
 
-      {/* Bottom row: Recent transactions + Top persons */}
+      {/* Recent transactions + Top persons */}
       <div className="grid-2">
-        <div className="card" style={{ animation: 'fadeIn 0.4s ease 0.4s both' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
-            <h3 style={{ fontSize: '15px', fontWeight: '700', color: 'var(--text-secondary)' }}>Recent Transactions</h3>
-            <Link to="/transactions" style={{ fontSize: '13px', color: 'var(--accent)', textDecoration: 'none', fontWeight: '600' }}>View all →</Link>
+        <div className="card" style={{ animation:'fadeIn 0.4s ease 0.4s both' }}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'20px' }}>
+            <h3 style={{ fontSize:'15px', fontWeight:'700', color:'var(--text-secondary)' }}>Recent Transactions</h3>
+            <Link to="/transactions" style={{ fontSize:'13px', color:'var(--accent)', textDecoration:'none', fontWeight:'600' }}>View all →</Link>
           </div>
           {recentTx.length > 0 ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div style={{ display:'flex', flexDirection:'column', gap:'12px' }}>
               {recentTx.map((t) => (
-                <div key={t._id} style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  padding: '12px 14px', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-sm)',
-                  border: '1px solid var(--border)',
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <div style={{
-                      width: '36px', height: '36px', borderRadius: '50%',
-                      background: t.type === 'given' ? 'var(--green-glow)' : 'var(--red-glow)',
-                      color: t.type === 'given' ? 'var(--green)' : 'var(--red)',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontWeight: '700', fontSize: '14px',
-                    }}>
+                <div key={t._id} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'12px 14px', background:'var(--bg-secondary)', borderRadius:'var(--radius-sm)', border:'1px solid var(--border)' }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:'12px' }}>
+                    <div style={{ width:'36px', height:'36px', borderRadius:'50%', background: t.type==='given'?'var(--green-glow)':'var(--red-glow)', color: t.type==='given'?'var(--green)':'var(--red)', display:'flex', alignItems:'center', justifyContent:'center', fontWeight:'700', fontSize:'14px' }}>
                       {t.personName.charAt(0).toUpperCase()}
                     </div>
                     <div>
-                      <div style={{ fontWeight: '600', fontSize: '14px' }}>{t.personName}</div>
-                      <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{formatDate(t.date)}</div>
+                      <div style={{ fontWeight:'600', fontSize:'14px' }}>{t.personName}</div>
+                      <div style={{ fontSize:'12px', color:'var(--text-muted)' }}>{formatDate(t.date)}</div>
                     </div>
                   </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{
-                      fontWeight: '700', fontSize: '14px', fontFamily: 'DM Mono, monospace',
-                      color: t.type === 'given' ? 'var(--green)' : 'var(--red)',
-                    }}>
+                  <div style={{ textAlign:'right' }}>
+                    <div style={{ fontWeight:'700', fontSize:'14px', fontFamily:'DM Mono, monospace', color: t.type==='given'?'var(--green)':'var(--red)' }}>
                       {t.type === 'given' ? '+' : '-'}{formatCurrency(t.amount)}
                     </div>
-                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{t.interestRate}% p.a.</div>
+                    <div style={{ fontSize:'11px', color:'var(--text-muted)' }}>{t.interestRate}% p.a.</div>
                   </div>
                 </div>
               ))}
@@ -253,36 +198,28 @@ export default function DashboardPage() {
             <div className="empty-state">
               <div className="icon">◈</div>
               <h3>No transactions yet</h3>
-              <Link to="/add-transaction" className="btn btn-primary btn-sm" style={{ marginTop: '8px' }}>Add First Transaction</Link>
+              <Link to="/add-transaction" className="btn btn-primary btn-sm" style={{ marginTop:'8px' }}>Add First Transaction</Link>
             </div>
           )}
         </div>
 
-        <div className="card" style={{ animation: 'fadeIn 0.4s ease 0.45s both' }}>
-          <h3 style={{ fontSize: '15px', fontWeight: '700', color: 'var(--text-secondary)', marginBottom: '20px' }}>
-            Account Balances by Person
-          </h3>
+        <div className="card" style={{ animation:'fadeIn 0.4s ease 0.45s both' }}>
+          <h3 style={{ fontSize:'15px', fontWeight:'700', color:'var(--text-secondary)', marginBottom:'20px' }}>Account Balances by Person</h3>
           {topPersons.length > 0 ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div style={{ display:'flex', flexDirection:'column', gap:'12px' }}>
               {topPersons.map(([name, data], i) => {
                 const net = (data.given || 0) - (data.taken || 0);
                 return (
-                  <div key={i} style={{
-                    padding: '14px', background: 'var(--bg-secondary)',
-                    borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)',
-                  }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                      <span style={{ fontWeight: '600', fontSize: '14px' }}>{name}</span>
-                      <span style={{
-                        fontWeight: '700', fontFamily: 'DM Mono, monospace', fontSize: '14px',
-                        color: net >= 0 ? 'var(--green)' : 'var(--red)',
-                      }}>
+                  <div key={i} style={{ padding:'14px', background:'var(--bg-secondary)', borderRadius:'var(--radius-sm)', border:'1px solid var(--border)' }}>
+                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'8px' }}>
+                      <span style={{ fontWeight:'600', fontSize:'14px' }}>{name}</span>
+                      <span style={{ fontWeight:'700', fontFamily:'DM Mono, monospace', fontSize:'14px', color: net>=0?'var(--green)':'var(--red)' }}>
                         {net >= 0 ? '+' : ''}{formatCurrency(net)}
                       </span>
                     </div>
-                    <div style={{ display: 'flex', gap: '16px', fontSize: '12px', color: 'var(--text-muted)' }}>
-                      <span style={{ color: 'var(--green)' }}>↑ {formatCurrency(data.given || 0)}</span>
-                      <span style={{ color: 'var(--red)' }}>↓ {formatCurrency(data.taken || 0)}</span>
+                    <div style={{ display:'flex', gap:'16px', fontSize:'12px', color:'var(--text-muted)' }}>
+                      <span style={{ color:'var(--green)' }}>↑ {formatCurrency(data.given || 0)}</span>
+                      <span style={{ color:'var(--red)' }}>↓ {formatCurrency(data.taken || 0)}</span>
                     </div>
                   </div>
                 );

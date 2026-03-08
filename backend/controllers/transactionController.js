@@ -4,25 +4,33 @@ const Transaction = require('../models/Transaction');
 // @route   POST /api/transactions/add
 exports.addTransaction = async (req, res) => {
   try {
-    const { personName, contact, amount, interestRate, interestType, type, date, dueDate, paymentMode, notes } = req.body;
+    const {
+      personName, contact, amount, interestRate, interestType,
+      type, date, dueDate, paymentMode, notes
+    } = req.body;
+
+    if (!personName || !amount || !interestRate || !type) {
+      return res.status(400).json({ success: false, message: 'personName, amount, interestRate and type are required' });
+    }
 
     const transaction = await Transaction.create({
-      userId: req.user._id,
+      userId:       req.user._id,
       personName,
-      contact,
-      amount: parseFloat(amount),
+      contact:      contact      || '',
+      amount:       parseFloat(amount),
       interestRate: parseFloat(interestRate),
       interestType: interestType || 'simple',
       type,
-      date: date || Date.now(),
-      dueDate: dueDate || null,
-      paymentMode: paymentMode || 'cash',
-      notes: notes || '',
-      screenshot: req.file ? req.file.filename : null,
+      date:         date         || Date.now(),
+      dueDate:      dueDate      || null,
+      paymentMode:  paymentMode  || 'cash',
+      notes:        notes        || '',
+      screenshot:   req.file ? req.file.filename : null,
     });
 
     res.status(201).json({ success: true, message: 'Transaction added successfully', data: transaction });
   } catch (error) {
+    console.error('addTransaction error:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 };
@@ -31,36 +39,39 @@ exports.addTransaction = async (req, res) => {
 // @route   GET /api/transactions/list
 exports.getTransactions = async (req, res) => {
   try {
-    const { type, status, personName, page = 1, limit = 20 } = req.query;
+    const { type, status, personName, page = 1, limit = 100 } = req.query;
     const query = { userId: req.user._id };
 
-    if (type) query.type = type;
-    if (status) query.status = status;
+    if (type)       query.type   = type;
+    if (status)     query.status = status;
     if (personName) query.personName = { $regex: personName, $options: 'i' };
 
-    const total = await Transaction.countDocuments(query);
+    const total        = await Transaction.countDocuments(query);
     const transactions = await Transaction.find(query)
       .sort({ date: -1 })
       .skip((page - 1) * limit)
       .limit(parseInt(limit));
 
-    // Recalculate interest dynamically
+    const msPerDay = 1000 * 60 * 60 * 24;
+
     const updatedTransactions = transactions.map((t) => {
-      const P = t.amount;
-      const R = t.interestRate;
-      const startDate = new Date(t.date);
-      const now = new Date();
-      const msPerDay = 1000 * 60 * 60 * 24;
-      const days = Math.max(0, Math.floor((now - startDate) / msPerDay));
-      const years = days / 365;
+      const P   = t.amount;
+      const R   = t.interestRate;
+      const start = new Date(t.date);
+
+      // ✅ Use dueDate if set, otherwise use today
+      const end = t.dueDate ? new Date(t.dueDate) : new Date();
+
+      const days   = Math.max(0, Math.floor((end - start) / msPerDay));
+      const years  = days / 365;
       const months = days / 30;
 
       const obj = t.toObject();
       obj.calculatedInterest = {
-        simple: parseFloat(((P * R * years) / 100).toFixed(2)),
+        simple:   parseFloat(((P * R * years) / 100).toFixed(2)),
         compound: parseFloat((P * Math.pow(1 + R / 100, years) - P).toFixed(2)),
-        monthly: parseFloat(((P * R * months) / 1200).toFixed(2)),
-        yearly: parseFloat(((P * R) / 100).toFixed(2)),
+        monthly:  parseFloat(((P * R * months) / 1200).toFixed(2)),
+        yearly:   parseFloat(((P * R) / 100).toFixed(2)),
       };
       obj.daysElapsed = days;
       return obj;
@@ -69,9 +80,15 @@ exports.getTransactions = async (req, res) => {
     res.json({
       success: true,
       data: updatedTransactions,
-      pagination: { total, page: parseInt(page), limit: parseInt(limit), pages: Math.ceil(total / limit) },
+      pagination: {
+        total,
+        page:  parseInt(page),
+        limit: parseInt(limit),
+        pages: Math.ceil(total / limit),
+      },
     });
   } catch (error) {
+    console.error('getTransactions error:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 };
@@ -82,23 +99,40 @@ exports.getSummary = async (req, res) => {
   try {
     const transactions = await Transaction.find({ userId: req.user._id });
 
-    let totalGiven = 0, totalTaken = 0, totalInterestEarned = 0, totalInterestOwed = 0;
+    const msPerDay = 1000 * 60 * 60 * 24;
+
+    let totalGiven         = 0;
+    let totalTaken         = 0;
+    let totalInterestEarned = 0;  // interest on money given out
+    let totalInterestOwed   = 0;  // interest on money taken
 
     transactions.forEach((t) => {
-      const P = t.amount;
-      const R = t.interestRate;
-      const startDate = new Date(t.date);
-      const now = new Date();
-      const days = Math.max(0, Math.floor((now - startDate) / (1000 * 60 * 60 * 24)));
-      const years = days / 365;
-      const interest = parseFloat(((P * R * years) / 100).toFixed(2));
+      const P     = t.amount;
+      const R     = t.interestRate;
+      const start = new Date(t.date);
+
+      // ✅ FIX: use dueDate when available, else today
+      const end   = (t.dueDate && new Date(t.dueDate) > start)
+        ? new Date(t.dueDate)
+        : new Date();
+
+      const days   = Math.max(0, Math.floor((end - start) / msPerDay));
+      const years  = days / 365;
+
+      // use interestType stored on transaction
+      let interest = 0;
+      if (t.interestType === 'compound') {
+        interest = parseFloat((P * Math.pow(1 + R / 100, years) - P).toFixed(2));
+      } else {
+        interest = parseFloat(((P * R * years) / 100).toFixed(2));
+      }
 
       if (t.type === 'given') {
-        totalGiven += t.amount;
+        totalGiven          += P;
         totalInterestEarned += interest;
       } else {
-        totalTaken += t.amount;
-        totalInterestOwed += interest;
+        totalTaken         += P;
+        totalInterestOwed  += interest;
       }
     });
 
@@ -110,7 +144,7 @@ exports.getSummary = async (req, res) => {
       { $match: { userId: req.user._id, date: { $gte: sixMonthsAgo } } },
       {
         $group: {
-          _id: { month: { $month: '$date' }, year: { $year: '$date' }, type: '$type' },
+          _id:   { month: { $month: '$date' }, year: { $year: '$date' }, type: '$type' },
           total: { $sum: '$amount' },
           count: { $sum: 1 },
         },
@@ -123,9 +157,9 @@ exports.getSummary = async (req, res) => {
       { $match: { userId: req.user._id } },
       {
         $group: {
-          _id: { personName: '$personName', contact: '$contact', type: '$type' },
+          _id:         { personName: '$personName', contact: '$contact', type: '$type' },
           totalAmount: { $sum: '$amount' },
-          count: { $sum: 1 },
+          count:       { $sum: 1 },
         },
       },
     ]);
@@ -133,17 +167,18 @@ exports.getSummary = async (req, res) => {
     res.json({
       success: true,
       data: {
-        totalGiven: parseFloat(totalGiven.toFixed(2)),
-        totalTaken: parseFloat(totalTaken.toFixed(2)),
+        totalGiven:          parseFloat(totalGiven.toFixed(2)),
+        totalTaken:          parseFloat(totalTaken.toFixed(2)),
         totalInterestEarned: parseFloat(totalInterestEarned.toFixed(2)),
-        totalInterestOwed: parseFloat(totalInterestOwed.toFixed(2)),
-        netBalance: parseFloat((totalGiven - totalTaken).toFixed(2)),
-        transactionCount: transactions.length,
+        totalInterestOwed:   parseFloat(totalInterestOwed.toFixed(2)),
+        netBalance:          parseFloat((totalGiven - totalTaken).toFixed(2)),
+        transactionCount:    transactions.length,
         monthlyData,
         personSummary,
       },
     });
   } catch (error) {
+    console.error('getSummary error:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 };
@@ -153,19 +188,23 @@ exports.getSummary = async (req, res) => {
 exports.updateTransaction = async (req, res) => {
   try {
     let transaction = await Transaction.findById(req.params.id);
-    if (!transaction) return res.status(404).json({ success: false, message: 'Transaction not found' });
-    if (transaction.userId.toString() !== req.user._id.toString()) {
+    if (!transaction)
+      return res.status(404).json({ success: false, message: 'Transaction not found' });
+    if (transaction.userId.toString() !== req.user._id.toString())
       return res.status(403).json({ success: false, message: 'Not authorized' });
-    }
 
     const updates = { ...req.body };
-    if (req.file) updates.screenshot = req.file.filename;
-    if (updates.amount) updates.amount = parseFloat(updates.amount);
+    if (req.file)          updates.screenshot   = req.file.filename;
+    if (updates.amount)    updates.amount        = parseFloat(updates.amount);
     if (updates.interestRate) updates.interestRate = parseFloat(updates.interestRate);
+    if (updates.dueDate === '') updates.dueDate   = null;
 
-    transaction = await Transaction.findByIdAndUpdate(req.params.id, updates, { new: true, runValidators: true });
+    transaction = await Transaction.findByIdAndUpdate(
+      req.params.id, updates, { new: true, runValidators: true }
+    );
     res.json({ success: true, message: 'Transaction updated', data: transaction });
   } catch (error) {
+    console.error('updateTransaction error:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 };
@@ -175,25 +214,27 @@ exports.updateTransaction = async (req, res) => {
 exports.deleteTransaction = async (req, res) => {
   try {
     const transaction = await Transaction.findById(req.params.id);
-    if (!transaction) return res.status(404).json({ success: false, message: 'Transaction not found' });
-    if (transaction.userId.toString() !== req.user._id.toString()) {
+    if (!transaction)
+      return res.status(404).json({ success: false, message: 'Transaction not found' });
+    if (transaction.userId.toString() !== req.user._id.toString())
       return res.status(403).json({ success: false, message: 'Not authorized' });
-    }
 
     await Transaction.findByIdAndDelete(req.params.id);
     res.json({ success: true, message: 'Transaction deleted' });
   } catch (error) {
+    console.error('deleteTransaction error:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 };
 
-// @desc    Export transactions as JSON (for PDF/Excel on frontend)
+// @desc    Export transactions as JSON
 // @route   GET /api/transactions/export
 exports.exportTransactions = async (req, res) => {
   try {
     const transactions = await Transaction.find({ userId: req.user._id }).sort({ date: -1 });
     res.json({ success: true, data: transactions });
   } catch (error) {
+    console.error('exportTransactions error:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 };
